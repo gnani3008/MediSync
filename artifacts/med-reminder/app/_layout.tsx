@@ -22,9 +22,9 @@ const queryClient = new QueryClient();
 
 function RootLayoutNav() {
   return (
-    <Stack screenOptions={{ headerShown: false }}>
+    <Stack screenOptions={{ headerShown: false, animation: "fade" }}>
       <Stack.Screen name="index" />
-      <Stack.Screen name="auth" />
+      <Stack.Screen name="auth" options={{ animation: "slide_from_right" }} />
       <Stack.Screen name="admin" />
       <Stack.Screen name="caretaker" />
       <Stack.Screen name="patient" />
@@ -53,7 +53,7 @@ export default function RootLayout() {
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
-            <GestureHandlerRootView>
+            <GestureHandlerRootView style={{ flex: 1 }}>
               <KeyboardProvider>
                 <RootLayoutNav />
               </KeyboardProvider>

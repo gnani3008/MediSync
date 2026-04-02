@@ -1,16 +1,15 @@
 import React, { useState, useEffect } from "react";
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  ActivityIndicator, Alert, TextInput, Modal,
+  ActivityIndicator, Alert, StatusBar, Modal,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
-import { useColors } from "@/hooks/useColors";
+import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/context/AuthContext";
 import { useApiClient } from "@/hooks/useApiClient";
 import type { AuthUser } from "@/context/AuthContext";
-import colors from "@/constants/colors";
 
 interface User extends AuthUser {
   createdAt: string;
@@ -25,8 +24,19 @@ interface Assignment {
   createdAt: string;
 }
 
+const ROLE_COLORS = {
+  admin:     { color: "#7c3aed", bg: "#f5f3ff" },
+  caretaker: { color: "#0284c7", bg: "#f0f9ff" },
+  patient:   { color: "#059669", bg: "#f0fdf4" },
+};
+
+const ROLE_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
+  admin: "shield-checkmark",
+  caretaker: "people",
+  patient: "person",
+};
+
 export default function AdminScreen() {
-  const c = useColors();
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
   const { request } = useApiClient();
@@ -60,54 +70,46 @@ export default function AdminScreen() {
     }
   }
 
-  async function handleAssign() {
-    if (!selectedPatient || !selectedCaretaker) {
-      Alert.alert("Select both a patient and caretaker");
-      return;
-    }
-    try {
-      await request("/assignments", {
-        method: "POST",
-        body: JSON.stringify({ patientId: selectedPatient, caretakerId: selectedCaretaker }),
-      });
-      setShowAssignModal(false);
-      setSelectedPatient(null);
-      setSelectedCaretaker(null);
-      loadData();
-    } catch (err: any) {
-      Alert.alert("Error", err.message);
-    }
-  }
-
-  async function handleDeleteAssignment(id: number) {
-    Alert.alert("Remove Assignment", "Are you sure?", [
-      { text: "Cancel" },
+  async function deleteUser(id: number, name: string) {
+    Alert.alert("Delete User", `Remove ${name} from the system?`, [
+      { text: "Cancel", style: "cancel" },
       {
-        text: "Remove", style: "destructive",
+        text: "Delete", style: "destructive",
         onPress: async () => {
-          try {
-            await request(`/assignments/${id}`, { method: "DELETE" });
-            loadData();
-          } catch (err: any) {
-            Alert.alert("Error", err.message);
-          }
+          try { await request(`/users/${id}`, { method: "DELETE" }); loadData(); }
+          catch (e: any) { Alert.alert("Error", e.message); }
         },
       },
     ]);
   }
 
-  async function handleDeleteUser(id: number) {
-    Alert.alert("Delete User", "This will remove the user and all their data.", [
-      { text: "Cancel" },
+  async function createAssignment() {
+    if (!selectedPatient || !selectedCaretaker) {
+      Alert.alert("Missing Selection", "Select both a patient and a caretaker.");
+      return;
+    }
+    try {
+      await request("/assignments", {
+        method: "POST",
+        body: { patientId: selectedPatient, caretakerId: selectedCaretaker },
+      });
+      setShowAssignModal(false);
+      setSelectedPatient(null);
+      setSelectedCaretaker(null);
+      loadData();
+    } catch (e: any) {
+      Alert.alert("Error", e.message);
+    }
+  }
+
+  async function deleteAssignment(id: number) {
+    Alert.alert("Remove Assignment", "Remove this patient-caretaker pairing?", [
+      { text: "Cancel", style: "cancel" },
       {
-        text: "Delete", style: "destructive",
+        text: "Remove", style: "destructive",
         onPress: async () => {
-          try {
-            await request(`/users/${id}`, { method: "DELETE" });
-            loadData();
-          } catch (err: any) {
-            Alert.alert("Error", err.message);
-          }
+          try { await request(`/assignments/${id}`, { method: "DELETE" }); loadData(); }
+          catch (e: any) { Alert.alert("Error", e.message); }
         },
       },
     ]);
@@ -115,221 +117,372 @@ export default function AdminScreen() {
 
   const patients = users.filter(u => u.role === "patient");
   const caretakers = users.filter(u => u.role === "caretaker");
+  const admins = users.filter(u => u.role === "admin");
 
-  const roleColor = (role: string) => {
-    if (role === "admin") return colors.light.adminColor;
-    if (role === "caretaker") return colors.light.caretakerColor;
-    return colors.light.patientColor;
-  };
+  if (loading) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#f8fafc" }}>
+        <ActivityIndicator color="#7c3aed" size="large" />
+      </View>
+    );
+  }
 
   return (
-    <View style={[styles.container, { backgroundColor: c.background }]}>
-      <View style={[styles.topBar, { paddingTop: insets.top + 12, backgroundColor: c.card, borderBottomColor: c.border }]}>
-        <View>
-          <Text style={[styles.greeting, { color: c.mutedForeground }]}>Administrator</Text>
-          <Text style={[styles.name, { color: c.foreground }]}>{user?.name}</Text>
-        </View>
-        <TouchableOpacity
-          onPress={() => Alert.alert("Sign Out", "Are you sure?", [{ text: "Cancel" }, { text: "Sign Out", style: "destructive", onPress: async () => { await logout(); router.replace("/"); } }])}
-          style={[styles.logoutBtn, { backgroundColor: c.destructive + "10" }]}
-        >
-          <Feather name="log-out" size={18} color={c.destructive} />
-        </TouchableOpacity>
-      </View>
+    <View style={{ flex: 1, backgroundColor: "#f8fafc" }}>
+      <StatusBar barStyle="light-content" />
 
-      <View style={[styles.tabs, { backgroundColor: c.card, borderBottomColor: c.border }]}>
-        {([["users", "Users"], ["assignments", "Assignments"]] as const).map(([key, label]) => (
-          <TouchableOpacity key={key} style={[styles.tab, tab === key && { borderBottomColor: colors.light.adminColor, borderBottomWidth: 2 }]} onPress={() => setTab(key)}>
-            <Text style={[styles.tabText, { color: tab === key ? colors.light.adminColor : c.mutedForeground, fontFamily: tab === key ? "Inter_600SemiBold" : "Inter_400Regular" }]}>{label}</Text>
+      <LinearGradient colors={["#7c3aed", "#9333ea"]} style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.headerTop}>
+          <View>
+            <Text style={styles.greeting}>Admin Panel</Text>
+            <Text style={styles.userName}>{user?.name?.split(" ")[0]}</Text>
+          </View>
+          <TouchableOpacity onPress={logout} style={styles.logoutBtn}>
+            <Ionicons name="log-out-outline" size={20} color="rgba(255,255,255,0.9)" />
           </TouchableOpacity>
-        ))}
-      </View>
+        </View>
 
-      {loading ? (
-        <View style={styles.center}><ActivityIndicator color={c.primary} size="large" /></View>
-      ) : (
-        <ScrollView style={styles.scroll} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 80 }} showsVerticalScrollIndicator={false}>
-          {tab === "users" ? (
-            <View style={{ gap: 10 }}>
-              {users.map(u => (
-                <View key={u.id} style={[styles.userCard, { backgroundColor: c.card, borderColor: c.border }]}>
-                  <View style={[styles.avatar, { backgroundColor: roleColor(u.role) + "20" }]}>
-                    <Text style={[styles.avatarText, { color: roleColor(u.role) }]}>{u.name[0]}</Text>
+        <View style={styles.statsRow}>
+          {[
+            { label: "Admins", value: admins.length, color: "#fff" },
+            { label: "Caretakers", value: caretakers.length, color: "#fff" },
+            { label: "Patients", value: patients.length, color: "#fff" },
+            { label: "Assignments", value: assignments.length, color: "#fff" },
+          ].map(s => (
+            <View key={s.label} style={styles.statChip}>
+              <Text style={styles.statVal}>{s.value}</Text>
+              <Text style={styles.statLabel}>{s.label}</Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.tabRow}>
+          {(["users", "assignments"] as const).map(t => (
+            <TouchableOpacity
+              key={t}
+              onPress={() => setTab(t)}
+              style={[styles.tab, tab === t && styles.tabActive]}
+            >
+              <Ionicons
+                name={t === "users" ? "people-outline" : "git-branch-outline"}
+                size={14}
+                color={tab === t ? "#7c3aed" : "rgba(255,255,255,0.7)"}
+              />
+              <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
+                {t === "users" ? "Users" : "Assignments"}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </LinearGradient>
+
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 90 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {tab === "users" && (
+          <>
+            {[
+              { role: "admin" as const, list: admins, label: "Administrators" },
+              { role: "caretaker" as const, list: caretakers, label: "Caretakers" },
+              { role: "patient" as const, list: patients, label: "Patients" },
+            ].map(group => (
+              <View key={group.role} style={{ marginBottom: 20 }}>
+                <View style={styles.groupHeader}>
+                  <View style={[styles.groupDot, { backgroundColor: ROLE_COLORS[group.role].color }]} />
+                  <Text style={styles.groupTitle}>{group.label}</Text>
+                  <View style={[styles.groupCount, { backgroundColor: ROLE_COLORS[group.role].bg }]}>
+                    <Text style={[styles.groupCountText, { color: ROLE_COLORS[group.role].color }]}>
+                      {group.list.length}
+                    </Text>
                   </View>
-                  <View style={styles.userInfo}>
-                    <Text style={[styles.userName, { color: c.foreground }]}>{u.name}</Text>
-                    <Text style={[styles.userEmail, { color: c.mutedForeground }]}>{u.email}</Text>
-                    <View style={[styles.roleBadge, { backgroundColor: roleColor(u.role) + "15" }]}>
-                      <Text style={[styles.roleText, { color: roleColor(u.role) }]}>{u.role}</Text>
-                    </View>
-                  </View>
-                  {u.id !== user?.id && (
-                    <TouchableOpacity onPress={() => handleDeleteUser(u.id)} style={[styles.deleteBtn, { backgroundColor: c.destructive + "10" }]}>
-                      <Feather name="trash-2" size={15} color={c.destructive} />
-                    </TouchableOpacity>
-                  )}
                 </View>
-              ))}
+
+                {group.list.length === 0 ? (
+                  <View style={styles.emptyGroup}>
+                    <Text style={styles.emptyGroupText}>No {group.label.toLowerCase()} yet</Text>
+                  </View>
+                ) : (
+                  group.list.map(u => (
+                    <UserRow
+                      key={u.id}
+                      user={u}
+                      onDelete={() => deleteUser(u.id, u.name)}
+                      isCurrentUser={u.id === user?.id}
+                    />
+                  ))
+                )}
+              </View>
+            ))}
+          </>
+        )}
+
+        {tab === "assignments" && (
+          assignments.length === 0 ? (
+            <View style={styles.empty}>
+              <View style={styles.emptyIcon}>
+                <Ionicons name="git-branch-outline" size={40} color="#7c3aed" />
+              </View>
+              <Text style={styles.emptyTitle}>No assignments yet</Text>
+              <Text style={styles.emptyDesc}>Tap the button below to assign a patient to a caretaker</Text>
             </View>
           ) : (
-            <View style={{ gap: 10 }}>
-              <TouchableOpacity
-                style={[styles.addBtn, { backgroundColor: colors.light.adminColor }]}
-                onPress={() => setShowAssignModal(true)}
-              >
-                <Feather name="plus" size={18} color="#fff" />
-                <Text style={styles.addBtnText}>Assign Patient to Caretaker</Text>
-              </TouchableOpacity>
+            assignments.map(a => (
+              <AssignmentCard key={a.id} assignment={a} onDelete={() => deleteAssignment(a.id)} />
+            ))
+          )
+        )}
+      </ScrollView>
 
-              {assignments.length === 0 && (
-                <View style={styles.empty}>
-                  <Feather name="link-2" size={36} color={c.mutedForeground} />
-                  <Text style={[styles.emptyText, { color: c.mutedForeground }]}>No assignments yet</Text>
-                </View>
-              )}
-
-              {assignments.map(a => (
-                <View key={a.id} style={[styles.assignCard, { backgroundColor: c.card, borderColor: c.border }]}>
-                  <View style={styles.assignRow}>
-                    <View style={[styles.miniAvatar, { backgroundColor: colors.light.patientColor + "20" }]}>
-                      <Text style={[styles.miniAvatarText, { color: colors.light.patientColor }]}>{a.patient?.name?.[0] ?? "P"}</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.assignName, { color: c.foreground }]}>{a.patient?.name}</Text>
-                      <Text style={[styles.assignRole, { color: colors.light.patientColor }]}>Patient</Text>
-                    </View>
-                  </View>
-                  <View style={[styles.arrowWrap, { backgroundColor: c.muted }]}>
-                    <Feather name="arrow-right" size={14} color={c.mutedForeground} />
-                  </View>
-                  <View style={styles.assignRow}>
-                    <View style={[styles.miniAvatar, { backgroundColor: colors.light.caretakerColor + "20" }]}>
-                      <Text style={[styles.miniAvatarText, { color: colors.light.caretakerColor }]}>{a.caretaker?.name?.[0] ?? "C"}</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.assignName, { color: c.foreground }]}>{a.caretaker?.name}</Text>
-                      <Text style={[styles.assignRole, { color: colors.light.caretakerColor }]}>Caretaker</Text>
-                    </View>
-                  </View>
-                  <TouchableOpacity onPress={() => handleDeleteAssignment(a.id)} style={[styles.deleteBtn, { backgroundColor: c.destructive + "10" }]}>
-                    <Feather name="x" size={15} color={c.destructive} />
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </View>
-          )}
-        </ScrollView>
+      {tab === "assignments" && (
+        <TouchableOpacity
+          style={[styles.fab, { bottom: insets.bottom + 24 }]}
+          onPress={() => setShowAssignModal(true)}
+          activeOpacity={0.85}
+        >
+          <LinearGradient colors={["#7c3aed", "#9333ea"]} style={styles.fabInner}>
+            <Ionicons name="add" size={28} color="#fff" />
+          </LinearGradient>
+        </TouchableOpacity>
       )}
 
-      <Modal visible={showAssignModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modal, { backgroundColor: c.card }]}>
-            <Text style={[styles.modalTitle, { color: c.foreground }]}>Assign Patient to Caretaker</Text>
+      <Modal visible={showAssignModal} animationType="slide" presentationStyle="pageSheet">
+        <View style={{ flex: 1, backgroundColor: "#f8fafc" }}>
+          <LinearGradient
+            colors={["#7c3aed", "#9333ea"]}
+            style={[styles.modalHeader, { paddingTop: insets.top + 12 }]}
+          >
+            <TouchableOpacity onPress={() => setShowAssignModal(false)} style={styles.closeBtn}>
+              <Ionicons name="close" size={22} color="#fff" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>New Assignment</Text>
+            <TouchableOpacity onPress={createAssignment} style={styles.confirmBtn}>
+              <Text style={styles.confirmText}>Assign</Text>
+            </TouchableOpacity>
+          </LinearGradient>
 
-            <Text style={[styles.modalLabel, { color: c.mutedForeground }]}>Select Patient</Text>
-            {patients.map(p => (
-              <TouchableOpacity
-                key={p.id}
-                style={[styles.selectOption, { borderColor: selectedPatient === p.id ? colors.light.patientColor : c.border, backgroundColor: selectedPatient === p.id ? colors.light.patientColor + "10" : c.background }]}
-                onPress={() => setSelectedPatient(p.id)}
-              >
-                <Text style={[styles.selectText, { color: c.foreground }]}>{p.name}</Text>
-                {selectedPatient === p.id && <Feather name="check" size={16} color={colors.light.patientColor} />}
-              </TouchableOpacity>
-            ))}
-
-            <Text style={[styles.modalLabel, { color: c.mutedForeground, marginTop: 12 }]}>Select Caretaker</Text>
-            {caretakers.map(ct => (
-              <TouchableOpacity
-                key={ct.id}
-                style={[styles.selectOption, { borderColor: selectedCaretaker === ct.id ? colors.light.caretakerColor : c.border, backgroundColor: selectedCaretaker === ct.id ? colors.light.caretakerColor + "10" : c.background }]}
-                onPress={() => setSelectedCaretaker(ct.id)}
-              >
-                <Text style={[styles.selectText, { color: c.foreground }]}>{ct.name}</Text>
-                {selectedCaretaker === ct.id && <Feather name="check" size={16} color={colors.light.caretakerColor} />}
-              </TouchableOpacity>
-            ))}
-
-            <View style={styles.modalBtns}>
-              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: c.muted }]} onPress={() => setShowAssignModal(false)}>
-                <Text style={[styles.modalBtnText, { color: c.foreground }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: colors.light.adminColor }]} onPress={handleAssign}>
-                <Text style={[styles.modalBtnText, { color: "#fff" }]}>Assign</Text>
-              </TouchableOpacity>
+          <ScrollView contentContainerStyle={{ padding: 20, gap: 24, paddingBottom: insets.bottom + 40 }}>
+            <View>
+              <Text style={styles.modalSectionTitle}>Select Patient</Text>
+              {patients.length === 0 ? (
+                <Text style={styles.noneText}>No patients registered</Text>
+              ) : (
+                patients.map(p => (
+                  <TouchableOpacity
+                    key={p.id}
+                    onPress={() => setSelectedPatient(p.id)}
+                    style={[styles.selectRow, selectedPatient === p.id && styles.selectRowActive]}
+                  >
+                    <View style={[styles.selectAvatar, { backgroundColor: "#f0fdf4" }]}>
+                      <Text style={{ fontSize: 16, fontFamily: "Inter_700Bold", color: "#059669" }}>
+                        {p.name.charAt(0)}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.selectName}>{p.name}</Text>
+                      <Text style={styles.selectEmail}>{p.email}</Text>
+                    </View>
+                    {selectedPatient === p.id && (
+                      <Ionicons name="checkmark-circle" size={22} color="#059669" />
+                    )}
+                  </TouchableOpacity>
+                ))
+              )}
             </View>
-          </View>
+
+            <View>
+              <Text style={styles.modalSectionTitle}>Select Caretaker</Text>
+              {caretakers.length === 0 ? (
+                <Text style={styles.noneText}>No caretakers registered</Text>
+              ) : (
+                caretakers.map(c => (
+                  <TouchableOpacity
+                    key={c.id}
+                    onPress={() => setSelectedCaretaker(c.id)}
+                    style={[styles.selectRow, selectedCaretaker === c.id && styles.selectRowActiveBlue]}
+                  >
+                    <View style={[styles.selectAvatar, { backgroundColor: "#f0f9ff" }]}>
+                      <Text style={{ fontSize: 16, fontFamily: "Inter_700Bold", color: "#0284c7" }}>
+                        {c.name.charAt(0)}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.selectName}>{c.name}</Text>
+                      <Text style={styles.selectEmail}>{c.email}</Text>
+                    </View>
+                    {selectedCaretaker === c.id && (
+                      <Ionicons name="checkmark-circle" size={22} color="#0284c7" />
+                    )}
+                  </TouchableOpacity>
+                ))
+              )}
+            </View>
+          </ScrollView>
         </View>
       </Modal>
-
-      {/* Bottom right FAB */}
-      <View style={{ position: "absolute", bottom: insets.bottom + 20, right: 20 }}>
-        <TouchableOpacity style={[styles.fab, { backgroundColor: colors.light.adminColor }]} onPress={loadData}>
-          <Feather name="refresh-cw" size={20} color="#fff" />
-        </TouchableOpacity>
-      </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  topBar: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1,
-  },
-  greeting: { fontSize: 12, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.5 },
-  name: { fontSize: 20, fontFamily: "Inter_700Bold", marginTop: 2 },
-  logoutBtn: { width: 38, height: 38, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  tabs: { flexDirection: "row", borderBottomWidth: 1 },
-  tab: { flex: 1, alignItems: "center", paddingVertical: 14 },
-  tabText: { fontSize: 14 },
-  scroll: { flex: 1 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  userCard: {
+function UserRow({ user, onDelete, isCurrentUser }: { user: User; onDelete: () => void; isCurrentUser: boolean }) {
+  const cfg = ROLE_COLORS[user.role as keyof typeof ROLE_COLORS] ?? { color: "#64748b", bg: "#f8fafc" };
+  const icon = ROLE_ICONS[user.role] ?? "person-outline";
+  return (
+    <View style={urStyles.row}>
+      <View style={[urStyles.avatar, { backgroundColor: cfg.bg }]}>
+        <Ionicons name={icon} size={18} color={cfg.color} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Text style={urStyles.name}>{user.name}</Text>
+          {isCurrentUser && <View style={urStyles.youBadge}><Text style={urStyles.youText}>You</Text></View>}
+        </View>
+        <Text style={urStyles.email}>{user.email}</Text>
+        {user.phone && <Text style={urStyles.phone}>{user.phone}</Text>}
+      </View>
+      {!isCurrentUser && (
+        <TouchableOpacity onPress={onDelete} style={urStyles.deleteBtn}>
+          <Ionicons name="trash-outline" size={17} color="#ef4444" />
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
+
+const urStyles = StyleSheet.create({
+  row: {
     flexDirection: "row", alignItems: "center", gap: 12,
-    borderRadius: 14, borderWidth: 1, padding: 14,
+    backgroundColor: "#fff", borderRadius: 14, padding: 14, marginBottom: 8,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2,
   },
-  avatar: { width: 44, height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  avatar: { width: 44, height: 44, borderRadius: 13, alignItems: "center", justifyContent: "center" },
+  name: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: "#0f172a" },
+  youBadge: { backgroundColor: "#7c3aed", borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
+  youText: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#fff" },
+  email: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#64748b", marginTop: 2 },
+  phone: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#94a3b8" },
+  deleteBtn: { padding: 8 },
+});
+
+function AssignmentCard({ assignment, onDelete }: { assignment: Assignment; onDelete: () => void }) {
+  return (
+    <View style={acStyles.card}>
+      <View style={acStyles.patient}>
+        <View style={[acStyles.avatar, { backgroundColor: "#f0fdf4" }]}>
+          <Text style={[acStyles.avatarText, { color: "#059669" }]}>{assignment.patient.name.charAt(0)}</Text>
+        </View>
+        <View>
+          <Text style={acStyles.roleTag}>Patient</Text>
+          <Text style={acStyles.personName}>{assignment.patient.name}</Text>
+          <Text style={acStyles.personEmail}>{assignment.patient.email}</Text>
+        </View>
+      </View>
+
+      <View style={acStyles.arrow}>
+        <Ionicons name="arrow-forward" size={20} color="#7c3aed" />
+      </View>
+
+      <View style={acStyles.caretaker}>
+        <View style={[acStyles.avatar, { backgroundColor: "#f0f9ff" }]}>
+          <Text style={[acStyles.avatarText, { color: "#0284c7" }]}>{assignment.caretaker.name.charAt(0)}</Text>
+        </View>
+        <View>
+          <Text style={[acStyles.roleTag, { color: "#0284c7" }]}>Caretaker</Text>
+          <Text style={acStyles.personName}>{assignment.caretaker.name}</Text>
+          <Text style={acStyles.personEmail}>{assignment.caretaker.email}</Text>
+        </View>
+      </View>
+
+      <TouchableOpacity onPress={onDelete} style={acStyles.deleteBtn}>
+        <Ionicons name="trash-outline" size={17} color="#ef4444" />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const acStyles = StyleSheet.create({
+  card: {
+    backgroundColor: "#fff", borderRadius: 16, padding: 16,
+    flexDirection: "row", alignItems: "center", marginBottom: 10, gap: 10,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
+  },
+  patient: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 },
+  caretaker: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 },
+  avatar: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   avatarText: { fontSize: 18, fontFamily: "Inter_700Bold" },
-  userInfo: { flex: 1, gap: 4 },
-  userName: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
-  userEmail: { fontSize: 12, fontFamily: "Inter_400Regular" },
-  roleBadge: { alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, marginTop: 2 },
-  roleText: { fontSize: 11, fontFamily: "Inter_600SemiBold", textTransform: "uppercase" },
-  deleteBtn: { width: 32, height: 32, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  addBtn: {
-    flexDirection: "row", alignItems: "center", gap: 8,
-    borderRadius: 12, paddingVertical: 13, paddingHorizontal: 16, marginBottom: 4,
-    justifyContent: "center",
+  roleTag: { fontSize: 10, fontFamily: "Inter_500Medium", color: "#059669", marginBottom: 2 },
+  personName: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: "#0f172a" },
+  personEmail: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#94a3b8" },
+  arrow: {
+    width: 36, height: 36, borderRadius: 10,
+    backgroundColor: "#f5f3ff", alignItems: "center", justifyContent: "center",
   },
-  addBtnText: { color: "#fff", fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  empty: { alignItems: "center", gap: 8, paddingVertical: 40 },
-  emptyText: { fontSize: 14, fontFamily: "Inter_400Regular" },
-  assignCard: {
-    flexDirection: "row", alignItems: "center", gap: 8,
-    borderRadius: 14, borderWidth: 1, padding: 14,
+  deleteBtn: { padding: 8 },
+});
+
+const styles = StyleSheet.create({
+  header: { paddingHorizontal: 20, paddingBottom: 0 },
+  headerTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 },
+  greeting: { fontSize: 13, fontFamily: "Inter_400Regular", color: "rgba(255,255,255,0.8)" },
+  userName: { fontSize: 24, fontFamily: "Inter_700Bold", color: "#fff" },
+  logoutBtn: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center",
   },
-  assignRow: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8 },
-  arrowWrap: { width: 28, height: 28, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  miniAvatar: { width: 32, height: 32, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  miniAvatarText: { fontSize: 13, fontFamily: "Inter_700Bold" },
-  assignName: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
-  assignRole: { fontSize: 11, fontFamily: "Inter_400Regular", textTransform: "uppercase" },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  modal: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 8, maxHeight: "85%" },
-  modalTitle: { fontSize: 18, fontFamily: "Inter_700Bold", marginBottom: 8 },
-  modalLabel: { fontSize: 12, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
-  selectOption: {
+  statsRow: { flexDirection: "row", gap: 8, marginBottom: 16 },
+  statChip: { flex: 1, alignItems: "center", backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 12, padding: 10 },
+  statVal: { fontSize: 18, fontFamily: "Inter_700Bold", color: "#fff" },
+  statLabel: { fontSize: 10, fontFamily: "Inter_400Regular", color: "rgba(255,255,255,0.75)" },
+  tabRow: { flexDirection: "row", gap: 8, paddingBottom: 16, paddingTop: 4 },
+  tab: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 6, paddingVertical: 10, borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.15)",
+  },
+  tabActive: { backgroundColor: "#fff" },
+  tabText: { fontSize: 14, fontFamily: "Inter_500Medium", color: "rgba(255,255,255,0.7)" },
+  tabTextActive: { color: "#7c3aed", fontFamily: "Inter_600SemiBold" },
+  groupHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 },
+  groupDot: { width: 8, height: 8, borderRadius: 4 },
+  groupTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: "#334155", flex: 1 },
+  groupCount: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 3 },
+  groupCountText: { fontSize: 13, fontFamily: "Inter_700Bold" },
+  emptyGroup: { backgroundColor: "#fff", borderRadius: 12, padding: 16, alignItems: "center" },
+  emptyGroupText: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#94a3b8" },
+  empty: { alignItems: "center", paddingTop: 60, gap: 12 },
+  emptyIcon: { width: 80, height: 80, borderRadius: 24, backgroundColor: "#f5f3ff", alignItems: "center", justifyContent: "center", marginBottom: 4 },
+  emptyTitle: { fontSize: 18, fontFamily: "Inter_600SemiBold", color: "#334155" },
+  emptyDesc: { fontSize: 14, fontFamily: "Inter_400Regular", color: "#94a3b8", textAlign: "center", paddingHorizontal: 20 },
+  fab: { position: "absolute", right: 20 },
+  fabInner: {
+    width: 60, height: 60, borderRadius: 20,
+    alignItems: "center", justifyContent: "center",
+    shadowColor: "#7c3aed", shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4, shadowRadius: 14, elevation: 10,
+  },
+  modalHeader: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    borderRadius: 10, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 11, marginBottom: 6,
+    paddingHorizontal: 20, paddingBottom: 16,
   },
-  selectText: { fontSize: 14, fontFamily: "Inter_500Medium" },
-  modalBtns: { flexDirection: "row", gap: 10, marginTop: 12 },
-  modalBtn: { flex: 1, borderRadius: 12, paddingVertical: 13, alignItems: "center" },
-  modalBtnText: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
-  fab: {
-    width: 52, height: 52, borderRadius: 16, alignItems: "center", justifyContent: "center",
-    shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 5,
+  closeBtn: {
+    width: 36, height: 36, borderRadius: 10,
+    backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center",
   },
+  modalTitle: { fontSize: 18, fontFamily: "Inter_700Bold", color: "#fff" },
+  confirmBtn: { backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8 },
+  confirmText: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: "#fff" },
+  modalSectionTitle: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#334155", marginBottom: 12 },
+  noneText: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#94a3b8" },
+  selectRow: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    backgroundColor: "#fff", borderRadius: 12, padding: 14, marginBottom: 8,
+    borderWidth: 2, borderColor: "#e2e8f0",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
+  },
+  selectRowActive: { borderColor: "#10b981", backgroundColor: "#f0fdf4" },
+  selectRowActiveBlue: { borderColor: "#0284c7", backgroundColor: "#f0f9ff" },
+  selectAvatar: { width: 44, height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  selectName: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: "#0f172a" },
+  selectEmail: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#64748b", marginTop: 2 },
 });
