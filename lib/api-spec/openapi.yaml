@@ -1,22 +1,32 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: MediCare Reminder - Medicine Reminder System API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication operations
+  - name: users
+    description: User management
+  - name: patients
+    description: Patient management
+  - name: medicines
+    description: Medicine and reminders
+  - name: assignments
+    description: Patient-Caretaker assignments
+  - name: events
+    description: ESP32 sensor events
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +34,676 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /users:
+    get:
+      operationId: getUsers
+      tags: [users]
+      summary: Get all users (admin only)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+
+  /users/{id}:
+    get:
+      operationId: getUserById
+      tags: [users]
+      summary: Get user by ID
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: updateUser
+      tags: [users]
+      summary: Update user (admin only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+      responses:
+        "200":
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+    delete:
+      operationId: deleteUser
+      tags: [users]
+      summary: Delete user (admin only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /assignments:
+    get:
+      operationId: getAssignments
+      tags: [assignments]
+      summary: Get all assignments (admin only)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: List of assignments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Assignment"
+    post:
+      operationId: createAssignment
+      tags: [assignments]
+      summary: Assign patient to caretaker (admin only)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAssignmentRequest"
+      responses:
+        "201":
+          description: Assignment created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assignment"
+
+  /assignments/{id}:
+    delete:
+      operationId: deleteAssignment
+      tags: [assignments]
+      summary: Remove assignment (admin only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /caretaker/patients:
+    get:
+      operationId: getCaretakerPatients
+      tags: [patients]
+      summary: Get patients assigned to current caretaker
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: List of assigned patients
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PatientDetail"
+
+  /medicines:
+    get:
+      operationId: getMedicines
+      tags: [medicines]
+      summary: Get medicines for current patient (or all if admin/caretaker)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: patientId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of medicines
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Medicine"
+    post:
+      operationId: createMedicine
+      tags: [medicines]
+      summary: Add a medicine reminder
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMedicineRequest"
+      responses:
+        "201":
+          description: Medicine created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Medicine"
+
+  /medicines/{id}:
+    put:
+      operationId: updateMedicine
+      tags: [medicines]
+      summary: Update medicine reminder
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMedicineRequest"
+      responses:
+        "200":
+          description: Medicine updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Medicine"
+    delete:
+      operationId: deleteMedicine
+      tags: [medicines]
+      summary: Delete medicine reminder
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /events:
+    get:
+      operationId: getEvents
+      tags: [events]
+      summary: Get recent sensor events
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: patientId
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: List of events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SensorEvent"
+    post:
+      operationId: createEvent
+      tags: [events]
+      summary: ESP32 posts sensor event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEventRequest"
+      responses:
+        "201":
+          description: Event recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SensorEvent"
+
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [patients]
+      summary: Get dashboard summary for caretaker
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /patients/{patientId}/adherence:
+    get:
+      operationId: getPatientAdherence
+      tags: [patients]
+      summary: Get medicine adherence stats for a patient
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Adherence stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdherenceStats"
+
+  /fcm-token:
+    post:
+      operationId: saveFcmToken
+      tags: [auth]
+      summary: Save FCM push notification token
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FcmTokenRequest"
+      responses:
+        "200":
+          description: Token saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   schemas:
     HealthStatus:
       type: object
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+      required: [error]
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+      required: [success]
+
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+      required: [email, password]
+
+    RegisterRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+        role:
+          type: string
+          enum: [admin, caretaker, patient]
+        phone:
+          type: string
+      required: [name, email, password, role]
+
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: "#/components/schemas/User"
+      required: [token, user]
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+          enum: [admin, caretaker, patient]
+        phone:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, name, email, role, createdAt]
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+        role:
+          type: string
+          enum: [admin, caretaker, patient]
+
+    Assignment:
+      type: object
+      properties:
+        id:
+          type: integer
+        patientId:
+          type: integer
+        caretakerId:
+          type: integer
+        patient:
+          $ref: "#/components/schemas/User"
+        caretaker:
+          $ref: "#/components/schemas/User"
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, patientId, caretakerId, createdAt]
+
+    CreateAssignmentRequest:
+      type: object
+      properties:
+        patientId:
+          type: integer
+        caretakerId:
+          type: integer
+      required: [patientId, caretakerId]
+
+    PatientDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        medicines:
+          type: array
+          items:
+            $ref: "#/components/schemas/Medicine"
+        lastEvent:
+          $ref: "#/components/schemas/SensorEvent"
+        adherenceRate:
+          type: number
+      required: [id, name, email, medicines]
+
+    Medicine:
+      type: object
+      properties:
+        id:
+          type: integer
+        patientId:
+          type: integer
+        name:
+          type: string
+        dosage:
+          type: string
+        frequency:
+          type: string
+          enum: [daily, twice_daily, thrice_daily, weekly, as_needed]
+        times:
+          type: array
+          items:
+            type: string
+        notes:
+          type: string
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, patientId, name, dosage, frequency, times, isActive, createdAt]
+
+    CreateMedicineRequest:
+      type: object
+      properties:
+        patientId:
+          type: integer
+        name:
+          type: string
+        dosage:
+          type: string
+        frequency:
+          type: string
+          enum: [daily, twice_daily, thrice_daily, weekly, as_needed]
+        times:
+          type: array
+          items:
+            type: string
+        notes:
+          type: string
+        isActive:
+          type: boolean
+      required: [patientId, name, dosage, frequency, times]
+
+    SensorEvent:
+      type: object
+      properties:
+        id:
+          type: integer
+        patientId:
+          type: integer
+        deviceId:
+          type: string
+        eventType:
+          type: string
+          enum: [motion_detected, box_opened, box_closed, alarm_triggered, alarm_acknowledged]
+        sensor:
+          type: string
+          enum: [pir1, pir2, lid]
+        timestamp:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+      required: [id, patientId, deviceId, eventType, timestamp]
+
+    CreateEventRequest:
+      type: object
+      properties:
+        deviceId:
+          type: string
+        patientId:
+          type: integer
+        eventType:
+          type: string
+          enum: [motion_detected, box_opened, box_closed, alarm_triggered, alarm_acknowledged]
+        sensor:
+          type: string
+          enum: [pir1, pir2, lid]
+        metadata:
+          type: object
+          additionalProperties: true
+      required: [deviceId, patientId, eventType]
+
+    DashboardSummary:
+      type: object
+      properties:
+        totalPatients:
+          type: integer
+        activeMedicines:
+          type: integer
+        todayEvents:
+          type: integer
+        adherenceRate:
+          type: number
+        recentEvents:
+          type: array
+          items:
+            $ref: "#/components/schemas/SensorEvent"
+      required: [totalPatients, activeMedicines, todayEvents, adherenceRate, recentEvents]
+
+    AdherenceStats:
+      type: object
+      properties:
+        patientId:
+          type: integer
+        patientName:
+          type: string
+        totalDoses:
+          type: integer
+        takenDoses:
+          type: integer
+        adherenceRate:
+          type: number
+        weeklyData:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+              taken:
+                type: integer
+              total:
+                type: integer
+      required: [patientId, patientName, totalDoses, takenDoses, adherenceRate, weeklyData]
+
+    FcmTokenRequest:
+      type: object
+      properties:
+        token:
+          type: string
+        platform:
+          type: string
+          enum: [ios, android, web]
+      required: [token]
